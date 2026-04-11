@@ -561,6 +561,16 @@ type ClaudeSettings struct {
 	// Path can be absolute, ~ for home, $HOME/${VAR} for env vars, or relative to session working directory
 	EnvFile string `toml:"env_file"`
 
+	// Chrome enables --chrome flag for Claude sessions
+	// Launches Claude with browser automation capabilities.
+	// Default: false
+	Chrome bool `toml:"chrome"`
+
+	// LoadDevChannels enables --dangerously-load-development-channels flag
+	// Loads development MCP channels that may not be stable or secure.
+	// Default: false
+	LoadDevChannels bool `toml:"load_dev_channels"`
+
 	// HooksEnabled enables Claude Code hooks for real-time status detection.
 	// When enabled, agent-deck uses lifecycle hooks (SessionStart, Stop, etc.)
 	// for instant, deterministic status updates instead of polling tmux content.

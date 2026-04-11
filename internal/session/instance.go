@@ -646,6 +646,9 @@ func (i *Instance) buildClaudeExtraFlags(opts *ClaudeOptions) string {
 		} else if opts.AllowSkipPermissions {
 			flags = append(flags, "--allow-dangerously-skip-permissions")
 		}
+		if opts.LoadDevChannels {
+			flags = append(flags, "--dangerously-load-development-channels")
+		}
 		if opts.UseChrome {
 			flags = append(flags, "--chrome")
 		}
