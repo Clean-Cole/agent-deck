@@ -490,7 +490,7 @@ func SupportsHyperlinks() bool {
 }
 
 // Tool detection patterns (used by DetectTool for initial tool identification)
-var toolDetectionOrder = []string{"claude", "gemini", "opencode", "codex", "pi"}
+var toolDetectionOrder = []string{"claude", "gemini", "opencode", "codex", "copilot", "pi"}
 
 var toolDetectionPatterns = map[string][]*regexp.Regexp{
 	"claude": {

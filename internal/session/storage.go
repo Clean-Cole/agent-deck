@@ -101,11 +101,12 @@ type InstanceData struct {
 
 // GroupData represents serializable group data
 type GroupData struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Expanded    bool   `json:"expanded"`
-	Order       int    `json:"order"`
-	DefaultPath string `json:"default_path,omitempty"`
+	Name             string `json:"name"`
+	Path             string `json:"path"`
+	Expanded         bool   `json:"expanded"`
+	Order            int    `json:"order"`
+	DefaultPath      string `json:"default_path,omitempty"`
+	WorktreeLocation string `json:"worktree_location,omitempty"`
 }
 
 // Storage handles persistence of session data via SQLite.
@@ -336,7 +337,8 @@ func (s *Storage) SaveWithGroups(instances []*Instance, groupTree *GroupTree) er
 				Name:        g.Name,
 				Expanded:    g.Expanded,
 				Order:       g.Order,
-				DefaultPath: g.DefaultPath,
+				DefaultPath:      g.DefaultPath,
+				WorktreeLocation: g.WorktreeLocation,
 			})
 		}
 		if err := s.db.SaveGroups(groupRows); err != nil {
@@ -390,7 +392,8 @@ func (s *Storage) SaveGroupsOnly(groupTree *GroupTree) error {
 			Name:        g.Name,
 			Expanded:    g.Expanded,
 			Order:       g.Order,
-			DefaultPath: g.DefaultPath,
+			DefaultPath:      g.DefaultPath,
+				WorktreeLocation: g.WorktreeLocation,
 		})
 	}
 
@@ -497,7 +500,8 @@ func (s *Storage) LoadLite() ([]*InstanceData, []*GroupData, error) {
 			Name:        g.Name,
 			Expanded:    g.Expanded,
 			Order:       g.Order,
-			DefaultPath: g.DefaultPath,
+			DefaultPath:      g.DefaultPath,
+				WorktreeLocation: g.WorktreeLocation,
 		}
 	}
 
@@ -594,7 +598,8 @@ func (s *Storage) LoadWithGroups() ([]*Instance, []*GroupData, error) {
 			Name:        g.Name,
 			Expanded:    g.Expanded,
 			Order:       g.Order,
-			DefaultPath: g.DefaultPath,
+			DefaultPath:      g.DefaultPath,
+				WorktreeLocation: g.WorktreeLocation,
 		}
 	}
 

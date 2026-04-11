@@ -333,3 +333,98 @@ func UnmarshalClaudeOptions(data json.RawMessage) (*ClaudeOptions, error) {
 
 	return &opts, nil
 }
+
+// CopilotOptions holds launch options for GitHub Copilot CLI sessions
+type CopilotOptions struct {
+	// SessionMode: "new" (default), "continue" (--continue), or "resume" (--resume=<id>)
+	SessionMode string `json:"session_mode,omitempty"`
+	// ResumeSessionID is the session ID for --resume flag (only when SessionMode="resume")
+	ResumeSessionID string `json:"resume_session_id,omitempty"`
+	// YoloMode enables --yolo flag (equivalent to --allow-all)
+	// nil = inherit from global config, true/false = explicit override
+	YoloMode *bool `json:"yolo_mode,omitempty"`
+	// AutopilotMode enables --autopilot flag (auto-approve tool calls)
+	// nil = inherit from global config, true/false = explicit override
+	AutopilotMode *bool `json:"autopilot_mode,omitempty"`
+	// Model overrides the model (e.g., "gpt-5.2")
+	Model string `json:"model,omitempty"`
+}
+
+// ToolName returns "copilot"
+func (o *CopilotOptions) ToolName() string {
+	return "copilot"
+}
+
+// ToArgs returns command-line arguments based on options
+func (o *CopilotOptions) ToArgs() []string {
+	var args []string
+
+	switch o.SessionMode {
+	case "continue":
+		args = append(args, "--continue")
+	case "resume":
+		if o.ResumeSessionID != "" {
+			args = append(args, "--resume="+o.ResumeSessionID)
+		}
+	}
+
+	if o.YoloMode != nil && *o.YoloMode {
+		args = append(args, "--yolo")
+	}
+	if o.Model != "" {
+		args = append(args, "--model", o.Model)
+	}
+
+	return args
+}
+
+// ToArgsForFork returns arguments suitable for fork resume command.
+// Fork uses --resume internally, so session mode flags are excluded.
+func (o *CopilotOptions) ToArgsForFork() []string {
+	var args []string
+	if o.YoloMode != nil && *o.YoloMode {
+		args = append(args, "--yolo")
+	}
+	if o.Model != "" {
+		args = append(args, "--model", o.Model)
+	}
+	return args
+}
+
+// NewCopilotOptions creates CopilotOptions with defaults from config
+func NewCopilotOptions(config *UserConfig) *CopilotOptions {
+	opts := &CopilotOptions{
+		SessionMode: "new",
+	}
+	if config != nil {
+		if config.Copilot.YoloMode {
+			yolo := true
+			opts.YoloMode = &yolo
+		}
+		opts.Model = config.Copilot.DefaultModel
+	}
+	return opts
+}
+
+// UnmarshalCopilotOptions deserializes CopilotOptions from JSON wrapper
+func UnmarshalCopilotOptions(data json.RawMessage) (*CopilotOptions, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+
+	var wrapper ToolOptionsWrapper
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return nil, err
+	}
+
+	if wrapper.Tool != "copilot" {
+		return nil, nil
+	}
+
+	var opts CopilotOptions
+	if err := json.Unmarshal(wrapper.Options, &opts); err != nil {
+		return nil, err
+	}
+
+	return &opts, nil
+}
