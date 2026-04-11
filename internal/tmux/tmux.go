@@ -511,6 +511,10 @@ var toolDetectionPatterns = map[string][]*regexp.Regexp{
 		regexp.MustCompile(`(?i)codex`),
 		regexp.MustCompile(`(?i)openai`),
 	},
+	"copilot": {
+		regexp.MustCompile(`(?i)\bcopilot\b`),
+		regexp.MustCompile(`(?i)\bgithub\s+copilot\b`),
+	},
 	"pi": {
 		regexp.MustCompile(`(?mi)^\s*pi>\s*`),
 		regexp.MustCompile(`(?i)\bpi\s+cli\b`),
@@ -536,6 +540,8 @@ func detectToolFromCommand(command string) string {
 			return "opencode"
 		case "codex":
 			return "codex"
+		case "copilot":
+			return "copilot"
 		case "pi":
 			return "pi"
 		}
@@ -550,6 +556,8 @@ func detectToolFromCommand(command string) string {
 		return "opencode"
 	case strings.Contains(cmdLower, "codex"):
 		return "codex"
+	case strings.Contains(cmdLower, "copilot"):
+		return "copilot"
 	case strings.Contains(cmdLower, " pi ") || strings.HasPrefix(cmdLower, "pi "):
 		return "pi"
 	default:

@@ -2748,12 +2748,16 @@ func (i *Instance) UpdateStatus() error {
 	if detectedTool := i.tmuxSession.DetectTool(); detectedTool != "" {
 		switch detectedTool {
 		case "claude", "gemini", "opencode", "codex":
-			i.Tool = detectedTool
+			// Never override "copilot" — copilot output may mention other tool
+			// names (e.g. "Gemini" as a model) but the tool was set explicitly.
+			if i.Tool != "copilot" {
+				i.Tool = detectedTool
+			}
 		case "shell":
 			// Only override if current tool is also a built-in (or already shell).
-			// Custom tools should keep their configured identity.
+			// Custom tools and copilot should keep their configured identity.
 			switch i.Tool {
-			case "", "shell", "claude", "gemini", "opencode", "codex", "copilot":
+			case "", "shell", "claude", "gemini", "opencode", "codex":
 				i.Tool = detectedTool
 			}
 		}
