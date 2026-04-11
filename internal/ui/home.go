@@ -9815,7 +9815,7 @@ func (h *Home) renderSessionItem(
 	}
 
 	// Tool badge with brand-specific color
-	// Claude=orange, Gemini=purple, Codex=cyan, Aider=red
+	// Claude=orange, Gemini=purple, Copilot=purple, Codex=cyan, Aider=red
 	toolStyle := GetToolStyle(instTool)
 
 	// Selection indicator
