@@ -113,6 +113,76 @@ agent-deck hooks status -p work
 agent-deck hooks status -p clientx
 ```
 
+### Multiple Claude accounts (per session, shared config)
+
+When you want to keep one `~/.claude` (same settings, skills, CLAUDE.md, projects)
+but swap the **logged-in account** per session, use `[claude.accounts.<name>]`
+instead of separate profiles. Each account points to an env file containing a
+credential env var (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, etc.) that
+overrides Claude's stored Keychain / `.credentials.json` creds via its normal
+auth precedence.
+
+```toml
+[claude]
+default_account = "personal"          # used when --account is not passed
+
+[claude.accounts.personal]
+description = "Personal Max"
+# no env_file → uses default Keychain cred in ~/.claude
+
+[claude.accounts.work]
+description = "Work Max"
+env_file = "~/.secrets/claude-work.env"   # contents: CLAUDE_CODE_OAUTH_TOKEN=...
+
+[claude.accounts.console]
+description = "API key"
+env_file = "~/.secrets/claude-console.env" # contents: ANTHROPIC_API_KEY=...
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `default_account` | string | `""` | Account used when `--account` is not passed. Must match an `accounts.<name>` key. |
+| `accounts.<name>.description` | string | `""` | Label shown in the TUI picker. |
+| `accounts.<name>.env_file` | string | `""` | `.env` file sourced at session start. Empty means "use the default Keychain / `.credentials.json` cred in `~/.claude`". |
+
+**Enroll a second account (one-time):**
+
+```bash
+# While logged in as the account you want to enroll:
+claude setup-token                      # prints a 1-year OAuth token
+mkdir -p ~/.secrets
+echo 'export CLAUDE_CODE_OAUTH_TOKEN=<paste-token>' > ~/.secrets/claude-work.env
+chmod 600 ~/.secrets/claude-work.env
+```
+
+> The `export` prefix is required. The file is `source`d by bash at session
+> start, so a bare `KEY=value` line creates a shell-local variable that never
+> reaches the `claude` child process.
+
+Then add `[claude.accounts.work]` referencing that file (see example above).
+
+**Use it:**
+
+```bash
+agent-deck launch --account work        # session uses work account
+agent-deck launch                       # session uses default (Keychain)
+AGENTDECK_CLAUDE_ACCOUNT=work agent-deck launch   # shell-scope default
+```
+
+When two or more accounts are configured, the new-session dialog shows an
+**Account** picker at the bottom of the Claude options panel. Cycle with
+space or ←/→.
+
+Resolution order for the per-session env file:
+1. Session's `--account <name>` (or `AGENTDECK_CLAUDE_ACCOUNT`)
+2. `[claude].default_account`
+3. `[claude].env_file` (legacy; still works when no accounts are defined)
+4. No injection → Claude's Keychain / `.credentials.json` cred
+
+`[claude.accounts.*]` and `CLAUDE_CONFIG_DIR` are orthogonal — you can combine
+them if you want both separate credentials *and* separate settings, but the
+common case ("same config, two logins") only needs accounts.
+
 ## [codex] Section
 
 Codex CLI integration settings.
