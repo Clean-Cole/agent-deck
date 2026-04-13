@@ -37,6 +37,10 @@ type ClaudeOptions struct {
 	UseChrome bool `json:"use_chrome,omitempty"`
 	// UseTeammateMode adds --teammate-mode tmux flag
 	UseTeammateMode bool `json:"use_teammate_mode,omitempty"`
+	// Account names a Claude account from [claude.accounts.<name>] whose
+	// env_file should be sourced at session start. Empty = fall through to
+	// [claude].default_account and [claude].env_file.
+	Account string `json:"account,omitempty"`
 
 	// Transient fields for worktree fork (not persisted)
 	WorkDir          string `json:"-"`
@@ -124,6 +128,7 @@ func NewClaudeOptions(config *UserConfig) *ClaudeOptions {
 		opts.AllowSkipPermissions = config.Claude.AllowDangerousMode
 		opts.DevChannels = config.Claude.DevChannels
 		opts.UseChrome = config.Claude.Chrome
+		opts.Account = config.Claude.DefaultAccount
 	}
 	return opts
 }

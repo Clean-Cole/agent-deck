@@ -59,6 +59,9 @@ func handleLaunch(profile string, args []string) {
 	// Resume session flag
 	resumeSession := fs.String("resume-session", "", "Claude session ID to resume")
 
+	// Claude account flag
+	claudeAccount := fs.String("account", "", "Claude account name from [claude.accounts.<name>] (overrides default_account)")
+
 	fs.Usage = func() {
 		fmt.Println("Usage: agent-deck launch [path] [options]")
 		fmt.Println()
@@ -317,6 +320,34 @@ func handleLaunch(profile string, args []string) {
 		}
 		opts.SessionMode = "resume"
 		opts.ResumeSessionID = *resumeSession
+		_ = newInstance.SetClaudeOptions(opts)
+	}
+
+	// Apply --account (or AGENTDECK_CLAUDE_ACCOUNT) for Claude sessions.
+	accountName := *claudeAccount
+	if accountName == "" {
+		accountName = os.Getenv("AGENTDECK_CLAUDE_ACCOUNT")
+	}
+	if accountName != "" {
+		tool := firstNonEmpty(sessionCommandTool, detectTool(sessionCommandInput))
+		if tool != "" && tool != "claude" {
+			out.Error("--account only works with Claude sessions (-c claude)", ErrCodeInvalidOperation)
+			os.Exit(1)
+		}
+		userConfig, _ := session.LoadUserConfig()
+		if _, ok := userConfig.GetClaudeAccount(accountName); !ok {
+			available := strings.Join(userConfig.ListClaudeAccounts(), ", ")
+			if available == "" {
+				available = "(none configured)"
+			}
+			out.Error(fmt.Sprintf("unknown claude account %q; available: %s", accountName, available), ErrCodeNotFound)
+			os.Exit(1)
+		}
+		opts := newInstance.GetClaudeOptions()
+		if opts == nil {
+			opts = session.NewClaudeOptions(userConfig)
+		}
+		opts.Account = accountName
 		_ = newInstance.SetClaudeOptions(opts)
 	}
 

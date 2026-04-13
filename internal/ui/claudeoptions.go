@@ -20,6 +20,9 @@ type ClaudeOptionsPanel struct {
 	autoMode             bool
 	useChrome            bool
 	useTeammateMode      bool
+	// Account picker state (only rendered when len(accounts) >= 2)
+	accounts      []string // sorted names from config, plus leading "" for "(default)"
+	accountIndex  int      // index into accounts
 	// Focus tracking
 	focusIndex int
 	// Whether this panel is for fork dialog (fewer options)
@@ -69,7 +72,30 @@ func (p *ClaudeOptionsPanel) SetDefaults(config *session.UserConfig) {
 		p.skipPermissions = config.Claude.GetDangerousMode()
 		p.allowSkipPermissions = config.Claude.AllowDangerousMode
 		p.autoMode = config.Claude.AutoMode
+		p.loadAccounts(config)
 	}
+}
+
+// loadAccounts populates the account picker options from config.
+// First slot is always "" (= "use default_account / no override"). The picker
+// is only rendered when >=2 configured accounts exist (accountsVisible()).
+func (p *ClaudeOptionsPanel) loadAccounts(config *session.UserConfig) {
+	names := config.ListClaudeAccounts()
+	p.accounts = append([]string{""}, names...)
+	// Preselect the configured default_account if present.
+	p.accountIndex = 0
+	for i, n := range p.accounts {
+		if n == config.Claude.DefaultAccount {
+			p.accountIndex = i
+			break
+		}
+	}
+}
+
+// accountsVisible returns true when the account picker row should be rendered.
+// Threshold: at least two real accounts configured (picker earns its pixels).
+func (p *ClaudeOptionsPanel) accountsVisible() bool {
+	return len(p.accounts) >= 3 // leading "" + >=2 real accounts
 }
 
 // SetFromOptions applies persisted ClaudeOptions to the panel fields.
@@ -91,6 +117,13 @@ func (p *ClaudeOptionsPanel) SetFromOptions(opts *session.ClaudeOptions) {
 	p.autoMode = opts.AutoMode
 	p.useChrome = opts.UseChrome
 	p.useTeammateMode = opts.UseTeammateMode
+	// Select the configured account if it's in the loaded set.
+	for i, n := range p.accounts {
+		if n == opts.Account {
+			p.accountIndex = i
+			break
+		}
+	}
 	p.updateInputFocus()
 	p.focusCount = p.getFocusCount()
 }
@@ -119,12 +152,17 @@ func (p *ClaudeOptionsPanel) AtTop() bool {
 
 // GetOptions returns current options as ClaudeOptions
 func (p *ClaudeOptionsPanel) GetOptions() *session.ClaudeOptions {
+	var account string
+	if p.accountIndex >= 0 && p.accountIndex < len(p.accounts) {
+		account = p.accounts[p.accountIndex]
+	}
 	opts := &session.ClaudeOptions{
 		SkipPermissions:      p.skipPermissions,
 		AllowSkipPermissions: p.allowSkipPermissions,
 		AutoMode:             p.autoMode,
 		UseChrome:            p.useChrome,
 		UseTeammateMode:      p.useTeammateMode,
+		Account:              account,
 	}
 
 	if !p.isForkMode {
@@ -193,6 +231,18 @@ func (p *ClaudeOptionsPanel) Update(msg tea.Msg) tea.Cmd {
 				}
 				return nil
 			}
+			// Account picker: left/right cycles when focused
+			if p.getFocusType() == "account" && p.accountsVisible() {
+				if msg.String() == "left" {
+					p.accountIndex--
+					if p.accountIndex < 0 {
+						p.accountIndex = len(p.accounts) - 1
+					}
+				} else {
+					p.accountIndex = (p.accountIndex + 1) % len(p.accounts)
+				}
+				return nil
+			}
 		}
 	}
 
@@ -208,31 +258,20 @@ func (p *ClaudeOptionsPanel) Update(msg tea.Msg) tea.Cmd {
 
 // handleSpaceKey handles space key for toggling checkboxes/radios
 func (p *ClaudeOptionsPanel) handleSpaceKey() {
-	if p.isForkMode {
-		switch p.focusIndex {
-		case 0:
-			p.skipPermissions = !p.skipPermissions
-		case 1:
-			p.autoMode = !p.autoMode
-		case 2:
-			p.useChrome = !p.useChrome
-		case 3:
-			p.useTeammateMode = !p.useTeammateMode
-		}
-	} else {
-		// NewDialog mode
-		switch p.getFocusType() {
-		case "sessionMode":
-			// Cycle through modes on space
-			p.sessionMode = (p.sessionMode + 1) % 3
-		case "skipPermissions":
-			p.skipPermissions = !p.skipPermissions
-		case "autoMode":
-			p.autoMode = !p.autoMode
-		case "chrome":
-			p.useChrome = !p.useChrome
-		case "teammateMode":
-			p.useTeammateMode = !p.useTeammateMode
+	switch p.getFocusType() {
+	case "sessionMode":
+		p.sessionMode = (p.sessionMode + 1) % 3
+	case "skipPermissions":
+		p.skipPermissions = !p.skipPermissions
+	case "autoMode":
+		p.autoMode = !p.autoMode
+	case "chrome":
+		p.useChrome = !p.useChrome
+	case "teammateMode":
+		p.useTeammateMode = !p.useTeammateMode
+	case "account":
+		if len(p.accounts) > 0 {
+			p.accountIndex = (p.accountIndex + 1) % len(p.accounts)
 		}
 	}
 }
@@ -249,35 +288,37 @@ func (p *ClaudeOptionsPanel) getFocusType() string {
 			return "chrome"
 		case 3:
 			return "teammateMode"
-		}
-	} else {
-		idx := p.focusIndex
-		// 0: session mode
-		if idx == 0 {
-			return "sessionMode"
-		}
-		// 1: resume input (only if mode == resume)
-		if p.sessionMode == 2 {
-			if idx == 1 {
-				return "resumeInput"
+		case 4:
+			if p.accountsVisible() {
+				return "account"
 			}
-			idx-- // Adjust for missing resume input
 		}
-		// 2: skip permissions
+		return ""
+	}
+	idx := p.focusIndex
+	// 0: session mode
+	if idx == 0 {
+		return "sessionMode"
+	}
+	// 1: resume input (only if mode == resume)
+	if p.sessionMode == 2 {
 		if idx == 1 {
-			return "skipPermissions"
+			return "resumeInput"
 		}
-		// 3: auto mode
-		if idx == 2 {
-			return "autoMode"
-		}
-		// 4: chrome
-		if idx == 3 {
-			return "chrome"
-		}
-		// 5: teammate mode
-		if idx == 4 {
-			return "teammateMode"
+		idx-- // Adjust for missing resume input
+	}
+	switch idx {
+	case 1:
+		return "skipPermissions"
+	case 2:
+		return "autoMode"
+	case 3:
+		return "chrome"
+	case 4:
+		return "teammateMode"
+	case 5:
+		if p.accountsVisible() {
+			return "account"
 		}
 	}
 	return ""
@@ -286,12 +327,19 @@ func (p *ClaudeOptionsPanel) getFocusType() string {
 // getFocusCount returns the number of focusable elements
 func (p *ClaudeOptionsPanel) getFocusCount() int {
 	if p.isForkMode {
-		return 4 // skip, auto, chrome, teammate
+		count := 4 // skip, auto, chrome, teammate
+		if p.accountsVisible() {
+			count++
+		}
+		return count
 	}
 
 	count := 5 // session mode, skip, auto, chrome, teammate
 	if p.sessionMode == 2 {
 		count++ // resume input
+	}
+	if p.accountsVisible() {
+		count++
 	}
 	return count
 }
@@ -339,6 +387,9 @@ func (p *ClaudeOptionsPanel) viewForkMode(labelStyle, activeStyle, dimStyle, hea
 	}
 	content += renderCheckboxLine("Chrome mode", p.useChrome, p.focusIndex == 2)
 	content += renderCheckboxLine("Teammate mode", p.useTeammateMode, p.focusIndex == 3)
+	if p.accountsVisible() {
+		content += p.renderAccountPicker(p.focusIndex == 4)
+	}
 	return content
 }
 
@@ -386,8 +437,42 @@ func (p *ClaudeOptionsPanel) viewNewMode(labelStyle, activeStyle, dimStyle, head
 
 	// Teammate mode checkbox
 	content += renderCheckboxLine("Teammate mode", p.useTeammateMode, p.focusIndex == focusIdx)
+	focusIdx++
+
+	// Account picker (only when >=2 accounts configured)
+	if p.accountsVisible() {
+		content += p.renderAccountPicker(p.focusIndex == focusIdx)
+	}
 
 	return content
+}
+
+// renderAccountPicker renders the Claude account selector row.
+// Format mirrors the session-mode radio ("◀ name ▶") so left/right feels
+// consistent with the rest of the dialog. Space also cycles forward.
+func (p *ClaudeOptionsPanel) renderAccountPicker(focused bool) string {
+	activeStyle := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+	labelStyle := lipgloss.NewStyle().Foreground(ColorText)
+	valueStyle := lipgloss.NewStyle().Foreground(ColorCyan)
+
+	name := ""
+	if p.accountIndex >= 0 && p.accountIndex < len(p.accounts) {
+		name = p.accounts[p.accountIndex]
+	}
+	display := name
+	if display == "" {
+		display = "(default)"
+	}
+
+	prefix := "  "
+	label := "Account: "
+	if focused {
+		prefix = activeStyle.Render("▶ ")
+		label = activeStyle.Render("Account: ")
+	} else {
+		label = labelStyle.Render(label)
+	}
+	return prefix + label + valueStyle.Render("◀ "+display+" ▶") + "\n"
 }
 
 // renderCheckboxMark renders a checkbox mark [x] or [ ] with consistent styling.

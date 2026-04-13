@@ -643,6 +643,32 @@ type ClaudeSettings struct {
 	// for instant, deterministic status updates instead of polling tmux content.
 	// Default: true (nil = use default true, set false to disable)
 	HooksEnabled *bool `toml:"hooks_enabled"`
+
+	// DefaultAccount names the account used when a session does not explicitly
+	// set one. Must match a key in Accounts. Empty = no account injection
+	// (falls through to EnvFile / Keychain default).
+	DefaultAccount string `toml:"default_account"`
+
+	// Accounts is a registry of named Claude accounts. Each entry can specify
+	// its own env_file containing credential env vars (CLAUDE_CODE_OAUTH_TOKEN,
+	// ANTHROPIC_API_KEY, etc.) that override stored Keychain/.credentials.json
+	// creds per Claude's auth precedence.
+	// Keyed by user-chosen name, e.g. [claude.accounts.work].
+	Accounts map[string]ClaudeAccount `toml:"accounts"`
+}
+
+// ClaudeAccount is a named Claude account referenced by sessions via
+// ClaudeOptions.Account. An account's env_file is sourced at session start and
+// can contain CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
+// ANTHROPIC_BASE_URL, etc. An account with no env_file uses the default
+// Keychain / .credentials.json cred resolved by Claude itself.
+type ClaudeAccount struct {
+	// Description is a human-readable label shown in the TUI picker. Optional.
+	Description string `toml:"description"`
+	// EnvFile is a .env file containing credential env vars for this account.
+	// Path supports ~ and ${VAR} expansion via ExpandPath. Optional — an empty
+	// EnvFile means "use the default Claude login" (Keychain on macOS).
+	EnvFile string `toml:"env_file"`
 }
 
 // GetProfileClaudeConfigDir returns the profile-specific Claude config directory, if configured.
@@ -710,6 +736,69 @@ func (c *UserConfig) GetConductorClaudeEnvFile(name string) string {
 		return ""
 	}
 	return conductorCfg.Claude.EnvFile
+}
+
+// GetClaudeAccount returns the named account and whether it was found.
+// Lookup is case-sensitive against [claude.accounts.<name>] keys.
+func (c *UserConfig) GetClaudeAccount(name string) (ClaudeAccount, bool) {
+	if c == nil || name == "" || c.Claude.Accounts == nil {
+		return ClaudeAccount{}, false
+	}
+	acct, ok := c.Claude.Accounts[name]
+	return acct, ok
+}
+
+// ListClaudeAccounts returns configured account names sorted alphabetically.
+// Returns an empty slice when no accounts are defined.
+func (c *UserConfig) ListClaudeAccounts() []string {
+	if c == nil || len(c.Claude.Accounts) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(c.Claude.Accounts))
+	for name := range c.Claude.Accounts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ResolveClaudeEnvFile returns the env_file path that should be sourced for a
+// Claude session, applying precedence:
+//  1. Named session account (explicit --account / ClaudeOptions.Account)
+//  2. [claude].default_account
+//  3. Global [claude].env_file
+//
+// Returns the (unexpanded) path and true if any step resolved to a non-empty
+// value. Callers are expected to run ExpandPath / resolvePath on the result.
+// An unknown sessionAccount is treated as "no session account" and falls
+// through to the default_account and global env_file — callers that want
+// strict validation should call GetClaudeAccount first.
+func (c *UserConfig) ResolveClaudeEnvFile(sessionAccount string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	if sessionAccount != "" {
+		if acct, ok := c.GetClaudeAccount(sessionAccount); ok && acct.EnvFile != "" {
+			return acct.EnvFile, true
+		}
+		if _, ok := c.GetClaudeAccount(sessionAccount); ok {
+			// Account exists but has no env_file → intentional "use Keychain default".
+			// Short-circuit so we don't fall back to default_account/global env_file.
+			return "", false
+		}
+	}
+	if c.Claude.DefaultAccount != "" {
+		if acct, ok := c.GetClaudeAccount(c.Claude.DefaultAccount); ok && acct.EnvFile != "" {
+			return acct.EnvFile, true
+		}
+		if _, ok := c.GetClaudeAccount(c.Claude.DefaultAccount); ok {
+			return "", false
+		}
+	}
+	if c.Claude.EnvFile != "" {
+		return c.Claude.EnvFile, true
+	}
+	return "", false
 }
 
 // GetDangerousMode returns whether dangerous mode is enabled, defaulting to true

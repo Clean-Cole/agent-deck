@@ -690,7 +690,6 @@ func TestWorktreeSettings_ApplyBranchPrefix_ExpandsEnvVars(t *testing.T) {
 // ============================================================================
 // Preview Settings Tests
 // ============================================================================
-
 func TestPreviewSettings(t *testing.T) {
 	// Create temp config
 	dir := t.TempDir()
@@ -948,10 +947,8 @@ follow_cwd_on_attach = true
 	}
 }
 
-// ============================================================================
-// Notifications Settings Tests
-// ============================================================================
-
+// =====================================================================// Notifications Settings Tests
+// =====================================================================
 func TestNotificationsConfig_Defaults(t *testing.T) {
 	// Test that default values are applied when section not present
 	tempDir := t.TempDir()
@@ -1473,5 +1470,110 @@ func TestWatcherAlertsSettingsDefaults(t *testing.T) {
 	var cfg UserConfig
 	if got := cfg.Watcher.Alerts.GetDebounceMinutes(); got != 15 {
 		t.Errorf("empty config: cfg.Watcher.Alerts.GetDebounceMinutes() = %d, want 15", got)
+	}
+}
+
+func TestClaudeAccounts_Parse(t *testing.T) {
+	tmpDir := t.TempDir()
+	configContent := `
+[claude]
+env_file = "~/.secrets/claude-default.env"
+default_account = "personal"
+
+[claude.accounts.personal]
+description = "Personal Max"
+
+[claude.accounts.work]
+description = "Work Max"
+env_file = "~/.secrets/claude-work.env"
+`
+	configPath := filepath.Join(tmpDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	var config UserConfig
+	if _, err := toml.DecodeFile(configPath, &config); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if got, want := config.Claude.DefaultAccount, "personal"; got != want {
+		t.Errorf("DefaultAccount = %q, want %q", got, want)
+	}
+	if got := len(config.Claude.Accounts); got != 2 {
+		t.Fatalf("len(Accounts) = %d, want 2", got)
+	}
+
+	names := config.ListClaudeAccounts()
+	if len(names) != 2 || names[0] != "personal" || names[1] != "work" {
+		t.Errorf("ListClaudeAccounts = %v, want [personal work]", names)
+	}
+
+	work, ok := config.GetClaudeAccount("work")
+	if !ok {
+		t.Fatal("GetClaudeAccount(work) not found")
+	}
+	if work.EnvFile != "~/.secrets/claude-work.env" {
+		t.Errorf("work.EnvFile = %q", work.EnvFile)
+	}
+
+	if _, ok := config.GetClaudeAccount("missing"); ok {
+		t.Error("GetClaudeAccount(missing) should return ok=false")
+	}
+}
+
+func TestResolveClaudeEnvFile_Precedence(t *testing.T) {
+	cfg := &UserConfig{}
+	cfg.Claude.EnvFile = "/global.env"
+	cfg.Claude.DefaultAccount = "def"
+	cfg.Claude.Accounts = map[string]ClaudeAccount{
+		"def":       {EnvFile: "/default.env"},
+		"work":      {EnvFile: "/work.env"},
+		"keychain":  {}, // no env_file → intentional "use Keychain"
+	}
+
+	// 1. Session account wins.
+	if got, ok := cfg.ResolveClaudeEnvFile("work"); !ok || got != "/work.env" {
+		t.Errorf("session=work: got (%q,%v), want (/work.env,true)", got, ok)
+	}
+	// 2. Session account with no env_file short-circuits (not default, not global).
+	if got, ok := cfg.ResolveClaudeEnvFile("keychain"); ok || got != "" {
+		t.Errorf("session=keychain: got (%q,%v), want (\"\",false)", got, ok)
+	}
+	// 3. No session → default_account.
+	if got, ok := cfg.ResolveClaudeEnvFile(""); !ok || got != "/default.env" {
+		t.Errorf("session=\"\": got (%q,%v), want (/default.env,true)", got, ok)
+	}
+	// 4. Unknown session name falls through to default_account.
+	if got, ok := cfg.ResolveClaudeEnvFile("bogus"); !ok || got != "/default.env" {
+		t.Errorf("session=bogus: got (%q,%v), want (/default.env,true)", got, ok)
+	}
+	// 5. No default_account, no session → global env_file.
+	cfg.Claude.DefaultAccount = ""
+	if got, ok := cfg.ResolveClaudeEnvFile(""); !ok || got != "/global.env" {
+		t.Errorf("no default: got (%q,%v), want (/global.env,true)", got, ok)
+	}
+	// 6. Nothing configured → empty.
+	cfg2 := &UserConfig{}
+	if got, ok := cfg2.ResolveClaudeEnvFile(""); ok || got != "" {
+		t.Errorf("empty config: got (%q,%v), want (\"\",false)", got, ok)
+	}
+}
+
+func TestClaudeOptions_AccountRoundTrip(t *testing.T) {
+	opts := &ClaudeOptions{
+		SessionMode: "new",
+		Account:     "work",
+	}
+	raw, err := MarshalToolOptions(opts)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got, err := UnmarshalClaudeOptions(raw)
+	if err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got == nil || got.Account != "work" {
+		t.Errorf("round-trip: got %+v, want Account=work", got)
 	}
 }
