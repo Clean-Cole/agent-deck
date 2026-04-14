@@ -159,6 +159,9 @@ func detectToolFromName(name string) string {
 	if strings.Contains(nameLower, "codex") {
 		return "codex"
 	}
+	if strings.Contains(nameLower, "copilot") {
+		return "copilot"
+	}
 
 	return "shell"
 }
