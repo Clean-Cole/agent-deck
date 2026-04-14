@@ -19,6 +19,22 @@ import (
 	"golang.org/x/term"
 )
 
+// shiftEnterCSIu is the kitty keyboard protocol encoding for Shift+Enter.
+var shiftEnterCSIu = []byte("\x1b[13;2u")
+
+// TranslateShiftEnter replaces Shift+Enter CSI u sequences (\x1b[13;2u) with
+// a literal newline (\n) in the given data. This is needed because tmux
+// re-encodes CSI u input as xterm modifyOtherKeys format on output, which many
+// apps (e.g. GitHub Copilot CLI) don't understand. By translating before the
+// bytes reach tmux, the inner app receives \n (newline) for Shift+Enter, which
+// is universally understood as "insert line break, don't submit".
+func TranslateShiftEnter(data []byte) []byte {
+	if !bytes.Contains(data, shiftEnterCSIu) {
+		return data
+	}
+	return bytes.ReplaceAll(data, shiftEnterCSIu, []byte{'\n'})
+}
+
 // IndexDetachKey returns the index of a control-key sequence in data, or -1 if
 // not found. detachByte is the raw ASCII byte (e.g. 0x11 for Ctrl+Q).
 // Handles three encodings:
@@ -198,21 +214,29 @@ func (s *Session) Attach(ctx context.Context, detachByte ...byte) error {
 				return
 			}
 
-			// Discard initial terminal ESC sequences (within first 50ms).
-			// These are things like terminal capability queries sent on attach.
-			// Only drop bytes starting with ESC (0x1b). Non-ESC bytes
-			// (including Ctrl+C / 0x03, Ctrl+Z / 0x1a) are forwarded immediately.
-			if time.Since(startTime) < controlSeqTimeout && n > 0 && buf[0] == 0x1b {
+			// Discard ALL bytes during the initial control-sequence window
+			// (first 50ms after attach). Terminal capability query responses
+			// (e.g. DA "\033[?64;1;2;…;19c") can arrive split across multiple
+			// reads — the first chunk starts with ESC but subsequent chunks
+			// don't, so an ESC-only filter leaks tails like ".19" into the
+			// session. Dropping everything in the window is safe because real
+			// user keystrokes don't arrive within 50ms of attach.
+			if time.Since(startTime) < controlSeqTimeout {
 				continue
 			}
+
+			// Translate Shift+Enter CSI u (\x1b[13;2u) to literal \n before
+			// forwarding to tmux. tmux re-encodes extended keys as xterm
+			// modifyOtherKeys format which many apps don't understand.
+			data := TranslateShiftEnter(buf[:n])
 
 			// Check for the detach key anywhere in the input chunk.
 			// Some terminals coalesce reads, so detach must not require a single-byte read.
 			// Handles raw byte, xterm modifyOtherKeys, and kitty CSI u encodings.
-			if idx := IndexDetachKey(buf[:n], detach); idx >= 0 {
+			if idx := IndexDetachKey(data, detach); idx >= 0 {
 				// Forward any bytes before the detach key, then detach.
 				if idx > 0 {
-					if _, err := ptmx.Write(buf[:idx]); err != nil {
+					if _, err := ptmx.Write(data[:idx]); err != nil {
 						select {
 						case ioErrors <- fmt.Errorf("PTY write error: %w", err):
 						default:
@@ -226,7 +250,7 @@ func (s *Session) Attach(ctx context.Context, detachByte ...byte) error {
 			}
 
 			// Forward other input to tmux PTY
-			if _, err := ptmx.Write(buf[:n]); err != nil {
+			if _, err := ptmx.Write(data); err != nil {
 				// Report PTY write error
 				select {
 				case ioErrors <- fmt.Errorf("PTY write error: %w", err):

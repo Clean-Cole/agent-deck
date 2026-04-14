@@ -255,6 +255,56 @@ func TestCSIuReaderPassesSGRMouseEvents(t *testing.T) {
 	}
 }
 
+// TestParseCSIuShiftEnter verifies Shift+Enter returns a newline rune, not KeyEnter.
+func TestParseCSIuShiftEnter(t *testing.T) {
+	// Shift+Enter: codepoint 13, modifier 2
+	result := ParseCSIu([]byte("\x1b[13;2u"))
+	if result == nil {
+		t.Fatal("ParseCSIu(Shift+Enter) = nil, want non-nil")
+	}
+	if len(result.Runes) != 1 || result.Runes[0] != '\n' {
+		t.Errorf("ParseCSIu(Shift+Enter).Runes = %v, want ['\\n']", result.Runes)
+	}
+}
+
+// TestParseModifyOtherKeysShiftEnter verifies Shift+Enter via modifyOtherKeys.
+func TestParseModifyOtherKeysShiftEnter(t *testing.T) {
+	// Shift+Enter: ESC[27;2;13~
+	result := ParseModifyOtherKeys([]byte("\x1b[27;2;13~"))
+	if result == nil {
+		t.Fatal("ParseModifyOtherKeys(Shift+Enter) = nil, want non-nil")
+	}
+	if len(result.Runes) != 1 || result.Runes[0] != '\n' {
+		t.Errorf("ParseModifyOtherKeys(Shift+Enter).Runes = %v, want ['\\n']", result.Runes)
+	}
+}
+
+// TestCSIuReaderShiftEnterEmitsNewline verifies the reader translates Shift+Enter to \n.
+func TestCSIuReaderShiftEnterEmitsNewline(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"CSIu Shift+Enter", "\x1b[13;2u", "\n"},
+		{"modifyOtherKeys Shift+Enter", "\x1b[27;2;13~", "\n"},
+		{"plain Enter CSIu", "\x1b[13u", "\r"},
+		{"text then Shift+Enter then text", "a\x1b[13;2ub", "a\nb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewCSIuReader(bytes.NewReader([]byte(tt.input)))
+			out, err := io.ReadAll(r)
+			if err != nil {
+				t.Fatalf("ReadAll error: %v", err)
+			}
+			if string(out) != tt.want {
+				t.Errorf("got %q, want %q", string(out), tt.want)
+			}
+		})
+	}
+}
+
 // TestCSIuReaderMixedInput verifies mixed input is correctly handled.
 func TestCSIuReaderMixedInput(t *testing.T) {
 	// "a" + shift+r CSI u + "b"
