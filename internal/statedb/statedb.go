@@ -76,11 +76,12 @@ type WatcherEventRow struct {
 
 // GroupRow represents a group row in the database.
 type GroupRow struct {
-	Path        string
-	Name        string
-	Expanded    bool
-	Order       int
-	DefaultPath string
+	Path             string
+	Name             string
+	Expanded         bool
+	Order            int
+	DefaultPath      string
+	WorktreeLocation string
 }
 
 // StatusRow holds status + acknowledgment for a session.
@@ -218,11 +219,12 @@ func (s *StateDB) Migrate() error {
 	// groups table
 	if _, err := tx.Exec(`
 		CREATE TABLE IF NOT EXISTS groups (
-			path         TEXT PRIMARY KEY,
-			name         TEXT NOT NULL,
-			expanded     INTEGER NOT NULL DEFAULT 1,
-			sort_order   INTEGER NOT NULL DEFAULT 0,
-			default_path TEXT NOT NULL DEFAULT ''
+			path              TEXT PRIMARY KEY,
+			name              TEXT NOT NULL,
+			expanded          INTEGER NOT NULL DEFAULT 1,
+			sort_order        INTEGER NOT NULL DEFAULT 0,
+			default_path      TEXT NOT NULL DEFAULT '',
+			worktree_location TEXT NOT NULL DEFAULT ''
 		)
 	`); err != nil {
 		return fmt.Errorf("statedb: create groups: %w", err)
@@ -332,6 +334,7 @@ func (s *StateDB) Migrate() error {
 	alterMigrations := []string{
 		"ALTER TABLE instances ADD COLUMN acknowledged INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE watcher_events ADD COLUMN triage_session_id TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE groups ADD COLUMN worktree_location TEXT NOT NULL DEFAULT ''",
 	}
 	for _, stmt := range alterMigrations {
 		if _, err := tx.Exec(stmt); err != nil {
@@ -558,8 +561,8 @@ func (s *StateDB) SaveGroups(groups []*GroupRow) error {
 	}
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO groups (path, name, expanded, sort_order, default_path)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO groups (path, name, expanded, sort_order, default_path, worktree_location)
+		VALUES (?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -571,7 +574,7 @@ func (s *StateDB) SaveGroups(groups []*GroupRow) error {
 		if g.Expanded {
 			expanded = 1
 		}
-		if _, err := stmt.Exec(g.Path, g.Name, expanded, g.Order, g.DefaultPath); err != nil {
+		if _, err := stmt.Exec(g.Path, g.Name, expanded, g.Order, g.DefaultPath, g.WorktreeLocation); err != nil {
 			return err
 		}
 	}
@@ -582,7 +585,7 @@ func (s *StateDB) SaveGroups(groups []*GroupRow) error {
 // LoadGroups returns all groups ordered by sort_order.
 func (s *StateDB) LoadGroups() ([]*GroupRow, error) {
 	rows, err := s.db.Query(`
-		SELECT path, name, expanded, sort_order, default_path
+		SELECT path, name, expanded, sort_order, default_path, worktree_location
 		FROM groups ORDER BY sort_order
 	`)
 	if err != nil {
@@ -594,7 +597,7 @@ func (s *StateDB) LoadGroups() ([]*GroupRow, error) {
 	for rows.Next() {
 		g := &GroupRow{}
 		var expanded int
-		if err := rows.Scan(&g.Path, &g.Name, &expanded, &g.Order, &g.DefaultPath); err != nil {
+		if err := rows.Scan(&g.Path, &g.Name, &expanded, &g.Order, &g.DefaultPath, &g.WorktreeLocation); err != nil {
 			return nil, err
 		}
 		g.Expanded = expanded != 0

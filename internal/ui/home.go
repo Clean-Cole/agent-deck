@@ -4778,6 +4778,9 @@ func (h *Home) handleNewDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			// Generate worktree path using configured location/template
 			wtSettings := session.GetWorktreeSettings()
+			if groupOverride := h.groupTree.WorktreeLocationForGroup(groupPath); groupOverride != "" {
+				wtSettings.DefaultLocation = groupOverride
+			}
 			worktreePath = git.WorktreePath(git.WorktreePathOptions{
 				Branch:    branchName,
 				Location:  wtSettings.DefaultLocation,
@@ -4798,6 +4801,11 @@ func (h *Home) handleNewDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			yolo := h.newDialog.GetCodexYoloMode()
 			codexOpts := &session.CodexOptions{YoloMode: &yolo}
 			toolOptionsJSON, _ = session.MarshalToolOptions(codexOpts)
+		} else if command == "copilot" {
+			yolo := h.newDialog.GetCopilotYoloMode()
+			autopilot := h.newDialog.GetCopilotAutopilotMode()
+			copilotOpts := &session.CopilotOptions{YoloMode: &yolo, AutopilotMode: &autopilot}
+			toolOptionsJSON, _ = session.MarshalToolOptions(copilotOpts)
 		}
 
 		parentSessionID := h.newDialog.GetParentSessionID()
@@ -5499,7 +5507,7 @@ func (h *Home) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if h.cursor < len(h.flatItems) {
 			item := h.flatItems[h.cursor]
 			if item.Type == session.ItemTypeSession && item.Session != nil &&
-				(session.IsClaudeCompatible(item.Session.Tool) || item.Session.Tool == "gemini") {
+				(session.IsClaudeCompatible(item.Session.Tool) || item.Session.Tool == "gemini" || item.Session.Tool == "copilot") {
 				h.mcpDialog.SetSize(h.width, h.height)
 				if err := h.mcpDialog.Show(item.Session.ProjectPath, item.Session.ID, item.Session.Tool); err != nil {
 					h.setError(err)
@@ -6786,6 +6794,9 @@ func (h *Home) handleForkDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 
 					wtSettings := session.GetWorktreeSettings()
+					if groupOverride := h.groupTree.WorktreeLocationForGroup(groupPath); groupOverride != "" {
+						wtSettings.DefaultLocation = groupOverride
+					}
 					worktreePath := git.WorktreePath(git.WorktreePathOptions{
 						Branch:    branchName,
 						Location:  wtSettings.DefaultLocation,
@@ -7097,6 +7108,8 @@ func (h *Home) createSessionInGroupWithWorktreeAndOptions(
 			tool = "aider"
 		case "codex":
 			tool = "codex"
+		case "copilot":
+			tool = "copilot"
 		case "opencode":
 			tool = "opencode"
 		default:
@@ -7526,6 +7539,8 @@ func (h *Home) forkSessionCmdWithOptions(
 		switch source.Tool {
 		case "opencode":
 			inst, _, err = source.CreateForkedOpenCodeInstance(title, groupPath)
+		case "copilot":
+			inst, _, err = source.CreateForkedCopilotInstance(title, groupPath)
 		default:
 			inst, _, err = source.CreateForkedInstanceWithOptions(title, groupPath, opts)
 		}
@@ -10284,7 +10299,7 @@ func (h *Home) renderSessionItem(
 	}
 
 	// Tool badge with brand-specific color
-	// Claude=orange, Gemini=purple, Codex=cyan, Aider=red
+	// Claude=orange, Gemini=purple, Copilot=purple, Codex=cyan, Aider=red
 	toolStyle := GetToolStyle(instTool)
 
 	// Selection indicator
