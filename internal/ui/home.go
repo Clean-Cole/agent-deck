@@ -7955,6 +7955,13 @@ func (a attachCmd) Run() error {
 	// NOTE: Screen clearing is ONLY done in the tea.Exec callback (after Attach returns)
 	// Removing clear screen here prevents double-clearing which corrupts terminal state
 
+	// Re-enable Kitty keyboard protocol so the terminal sends CSI u sequences
+	// (e.g. Shift+Enter as \x1b[13;2u) while attached to the tmux session.
+	// main.go disables it for the Bubble Tea TUI; we restore it here so apps
+	// inside tmux (Claude Code, Copilot CLI, etc.) receive extended keys.
+	EnableKittyKeyboard(os.Stdout)
+	defer DisableKittyKeyboard(os.Stdout)
+
 	ctx := context.Background()
 	return a.session.Attach(ctx, a.detachByte)
 }
@@ -7994,6 +8001,9 @@ type remoteCreateAndAttachCmd struct {
 }
 
 func (r remoteCreateAndAttachCmd) Run() error {
+	EnableKittyKeyboard(os.Stdout)
+	defer DisableKittyKeyboard(os.Stdout)
+
 	ctx := context.Background()
 	sessionID, err := r.runner.CreateSession(ctx)
 	if err != nil {
@@ -8014,6 +8024,9 @@ type attachWindowCmd struct {
 }
 
 func (a attachWindowCmd) Run() error {
+	EnableKittyKeyboard(os.Stdout)
+	defer DisableKittyKeyboard(os.Stdout)
+
 	ctx := context.Background()
 	return a.session.AttachWindow(ctx, a.windowIndex, a.detachByte)
 }
@@ -8047,6 +8060,9 @@ type remoteAttachCmd struct {
 }
 
 func (r remoteAttachCmd) Run() error {
+	EnableKittyKeyboard(os.Stdout)
+	defer DisableKittyKeyboard(os.Stdout)
+
 	return r.runner.Attach(r.sessionID)
 }
 

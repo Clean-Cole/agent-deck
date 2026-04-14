@@ -113,6 +113,11 @@ func ParseCSIu(data []byte) *tea.KeyMsg {
 	// Map well-known control codepoints to tea key types.
 	switch codepoint {
 	case 13: // CR = Enter
+		if shiftHeld {
+			// Shift+Enter → newline (line break, not submit)
+			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\n'}}
+			return &msg
+		}
 		msg := tea.KeyMsg{Type: tea.KeyEnter}
 		return &msg
 	case 9: // HT = Tab
@@ -195,6 +200,10 @@ func ParseModifyOtherKeys(data []byte) *tea.KeyMsg {
 
 	switch codepoint {
 	case 13:
+		if shiftHeld {
+			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\n'}}
+			return &msg
+		}
 		msg := tea.KeyMsg{Type: tea.KeyEnter}
 		return &msg
 	case 9:

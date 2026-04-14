@@ -22,6 +22,21 @@ import (
 
 const attachOutputDrainTimeout = 250 * time.Millisecond
 const attachReplyQuarantine = 2 * time.Second
+// shiftEnterCSIu is the kitty keyboard protocol encoding for Shift+Enter.
+var shiftEnterCSIu = []byte("\x1b[13;2u")
+
+// TranslateShiftEnter replaces Shift+Enter CSI u sequences (\x1b[13;2u) with
+// a literal newline (\n) in the given data. This is needed because tmux
+// re-encodes CSI u input as xterm modifyOtherKeys format on output, which many
+// apps (e.g. GitHub Copilot CLI) don't understand. By translating before the
+// bytes reach tmux, the inner app receives \n (newline) for Shift+Enter, which
+// is universally understood as "insert line break, don't submit".
+func TranslateShiftEnter(data []byte) []byte {
+	if !bytes.Contains(data, shiftEnterCSIu) {
+		return data
+	}
+	return bytes.ReplaceAll(data, shiftEnterCSIu, []byte{'\n'})
+}
 
 // IndexDetachKey returns the index of a control-key sequence in data, or -1 if
 // not found. detachByte is the raw ASCII byte (e.g. 0x11 for Ctrl+Q).
@@ -252,13 +267,18 @@ func (s *Session) Attach(ctx context.Context, detachByte ...byte) error {
 				}
 			}
 
+			// Translate Shift+Enter CSI u (\x1b[13;2u) to literal \n before
+			// forwarding to tmux. tmux re-encodes extended keys as xterm
+			// modifyOtherKeys format which many apps don't understand.
+			data := TranslateShiftEnter(chunk)
+
 			// Check for the detach key anywhere in the input chunk.
 			// Some terminals coalesce reads, so detach must not require a single-byte read.
 			// Handles raw byte, xterm modifyOtherKeys, and kitty CSI u encodings.
-			if idx := IndexDetachKey(chunk, detach); idx >= 0 {
+			if idx := IndexDetachKey(data, detach); idx >= 0 {
 				// Forward any bytes before the detach key, then detach.
 				if idx > 0 {
-					if _, err := ptmx.Write(chunk[:idx]); err != nil {
+					if _, err := ptmx.Write(data[:idx]); err != nil {
 						select {
 						case ioErrors <- fmt.Errorf("PTY write error: %w", err):
 						default:
@@ -272,7 +292,7 @@ func (s *Session) Attach(ctx context.Context, detachByte ...byte) error {
 			}
 
 			// Forward other input to tmux PTY
-			if _, err := ptmx.Write(chunk); err != nil {
+			if _, err := ptmx.Write(data); err != nil {
 				// Report PTY write error
 				select {
 				case ioErrors <- fmt.Errorf("PTY write error: %w", err):
