@@ -523,12 +523,19 @@ func (i *Instance) buildClaudeCommandWithMessage(baseCommand, message string) st
 	instanceIDPrefix := fmt.Sprintf("AGENTDECK_INSTANCE_ID=%s ", i.ID)
 	configDirPrefix = instanceIDPrefix + configDirPrefix
 
-	// Get options - either from instance or create defaults from config
+	// Get options, merging stored opts with config defaults for new fields
 	opts := i.GetClaudeOptions()
+	userConfig, _ := LoadUserConfig()
 	if opts == nil {
-		// Fall back to config defaults
-		userConfig, _ := LoadUserConfig()
 		opts = NewClaudeOptions(userConfig)
+	} else if userConfig != nil {
+		configOpts := NewClaudeOptions(userConfig)
+		if !opts.UseChrome {
+			opts.UseChrome = configOpts.UseChrome
+		}
+		if len(opts.DevChannels) == 0 {
+			opts.DevChannels = configOpts.DevChannels
+		}
 	}
 
 	// If baseCommand is just "claude", build the appropriate command
@@ -681,6 +688,10 @@ func (i *Instance) buildClaudeExtraFlags(opts *ClaudeOptions) string {
 			flags = append(flags, "--permission-mode auto")
 		} else if opts.AllowSkipPermissions {
 			flags = append(flags, "--allow-dangerously-skip-permissions")
+		}
+		if len(opts.DevChannels) > 0 {
+			flags = append(flags, "--dangerously-load-development-channels")
+			flags = append(flags, opts.DevChannels...)
 		}
 		if opts.UseChrome {
 			flags = append(flags, "--chrome")
@@ -4766,11 +4777,21 @@ func (i *Instance) buildClaudeResumeCommand() string {
 	instanceIDPrefix := fmt.Sprintf("AGENTDECK_INSTANCE_ID=%s ", i.ID)
 	configDirPrefix = instanceIDPrefix + configDirPrefix
 
-	// Get per-session permission settings (falls back to config if not persisted)
+	// Get per-session permission settings, merging stored opts with config defaults
+	// for fields that may have been added after the session was created.
 	opts := i.GetClaudeOptions()
+	userConfig, _ := LoadUserConfig()
 	if opts == nil {
-		userConfig, _ := LoadUserConfig()
 		opts = NewClaudeOptions(userConfig)
+	} else if userConfig != nil {
+		// Merge config defaults for fields not stored in old session data
+		configOpts := NewClaudeOptions(userConfig)
+		if !opts.UseChrome {
+			opts.UseChrome = configOpts.UseChrome
+		}
+		if len(opts.DevChannels) == 0 {
+			opts.DevChannels = configOpts.DevChannels
+		}
 	}
 
 	// Check if session has actual conversation data
@@ -4808,7 +4829,6 @@ func (i *Instance) buildClaudeResumeCommand() string {
 	// buildClaudeExtraFlags silently disappears on session restart — the
 	// phase-5 loopback regression (TestResumeCommandAppendsChannels).
 	extraFlags := i.buildClaudeExtraFlags(opts)
-
 	// CLAUDE_SESSION_ID is propagated via host-side SetEnvironment (SyncSessionIDsToTmux)
 	// after the tmux session is restarted. No inline tmux set-environment in the shell string
 	// (which silently fails inside Docker sandbox containers).

@@ -29,6 +29,10 @@ type ClaudeOptions struct {
 	// Uses a classifier model to auto-approve safe operations while blocking risky ones.
 	// Only used when SkipPermissions is false (SkipPermissions takes precedence).
 	AutoMode bool `json:"auto_mode,omitempty"`
+	// DevChannels specifies tagged entries for --dangerously-load-development-channels.
+	// Each entry must be tagged: "server:<name>" or "plugin:<name>@<marketplace>".
+	// Example: ["server:webhook", "plugin:myplugin@mymarketplace"]
+	DevChannels []string `json:"dev_channels,omitempty"`
 	// UseChrome adds --chrome flag
 	UseChrome bool `json:"use_chrome,omitempty"`
 	// UseTeammateMode adds --teammate-mode tmux flag
@@ -69,6 +73,10 @@ func (o *ClaudeOptions) ToArgs() []string {
 	} else if o.AllowSkipPermissions {
 		args = append(args, "--allow-dangerously-skip-permissions")
 	}
+	if len(o.DevChannels) > 0 {
+		args = append(args, "--dangerously-load-development-channels")
+		args = append(args, o.DevChannels...)
+	}
 	if o.UseChrome {
 		args = append(args, "--chrome")
 	}
@@ -91,6 +99,10 @@ func (o *ClaudeOptions) ToArgsForFork() []string {
 	} else if o.AllowSkipPermissions {
 		args = append(args, "--allow-dangerously-skip-permissions")
 	}
+	if len(o.DevChannels) > 0 {
+		args = append(args, "--dangerously-load-development-channels")
+		args = append(args, o.DevChannels...)
+	}
 	if o.UseChrome {
 		args = append(args, "--chrome")
 	}
@@ -110,6 +122,8 @@ func NewClaudeOptions(config *UserConfig) *ClaudeOptions {
 		opts.SkipPermissions = config.Claude.GetDangerousMode()
 		opts.AutoMode = config.Claude.AutoMode
 		opts.AllowSkipPermissions = config.Claude.AllowDangerousMode
+		opts.DevChannels = config.Claude.DevChannels
+		opts.UseChrome = config.Claude.Chrome
 	}
 	return opts
 }
