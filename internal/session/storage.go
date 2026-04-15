@@ -104,11 +104,12 @@ type InstanceData struct {
 
 // GroupData represents serializable group data
 type GroupData struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Expanded    bool   `json:"expanded"`
-	Order       int    `json:"order"`
-	DefaultPath string `json:"default_path,omitempty"`
+	Name             string `json:"name"`
+	Path             string `json:"path"`
+	Expanded         bool   `json:"expanded"`
+	Order            int    `json:"order"`
+	DefaultPath      string `json:"default_path,omitempty"`
+	WorktreeLocation string `json:"worktree_location,omitempty"`
 }
 
 // Storage handles persistence of session data via SQLite.
@@ -336,11 +337,12 @@ func (s *Storage) SaveWithGroups(instances []*Instance, groupTree *GroupTree) er
 		groupRows := make([]*statedb.GroupRow, 0, len(groupTree.GroupList))
 		for _, g := range groupTree.GroupList {
 			groupRows = append(groupRows, &statedb.GroupRow{
-				Path:        g.Path,
-				Name:        g.Name,
-				Expanded:    g.Expanded,
-				Order:       g.Order,
-				DefaultPath: g.DefaultPath,
+				Path:             g.Path,
+				Name:             g.Name,
+				Expanded:         g.Expanded,
+				Order:            g.Order,
+				DefaultPath:      g.DefaultPath,
+				WorktreeLocation: g.WorktreeLocation,
 			})
 		}
 		if err := s.db.SaveGroups(groupRows); err != nil {
@@ -390,11 +392,12 @@ func (s *Storage) SaveGroupsOnly(groupTree *GroupTree) error {
 	groupRows := make([]*statedb.GroupRow, 0, len(groupTree.GroupList))
 	for _, g := range groupTree.GroupList {
 		groupRows = append(groupRows, &statedb.GroupRow{
-			Path:        g.Path,
-			Name:        g.Name,
-			Expanded:    g.Expanded,
-			Order:       g.Order,
-			DefaultPath: g.DefaultPath,
+			Path:             g.Path,
+			Name:             g.Name,
+			Expanded:         g.Expanded,
+			Order:            g.Order,
+			DefaultPath:      g.DefaultPath,
+			WorktreeLocation: g.WorktreeLocation,
 		})
 	}
 
@@ -499,11 +502,12 @@ func (s *Storage) LoadLite() ([]*InstanceData, []*GroupData, error) {
 	groups := make([]*GroupData, len(dbGroups))
 	for i, g := range dbGroups {
 		groups[i] = &GroupData{
-			Path:        g.Path,
-			Name:        g.Name,
-			Expanded:    g.Expanded,
-			Order:       g.Order,
-			DefaultPath: g.DefaultPath,
+			Path:             g.Path,
+			Name:             g.Name,
+			Expanded:         g.Expanded,
+			Order:            g.Order,
+			DefaultPath:      g.DefaultPath,
+			WorktreeLocation: g.WorktreeLocation,
 		}
 	}
 
@@ -598,11 +602,12 @@ func (s *Storage) LoadWithGroups() ([]*Instance, []*GroupData, error) {
 	data.Groups = make([]*GroupData, len(dbGroups))
 	for i, g := range dbGroups {
 		data.Groups[i] = &GroupData{
-			Path:        g.Path,
-			Name:        g.Name,
-			Expanded:    g.Expanded,
-			Order:       g.Order,
-			DefaultPath: g.DefaultPath,
+			Path:             g.Path,
+			Name:             g.Name,
+			Expanded:         g.Expanded,
+			Order:            g.Order,
+			DefaultPath:      g.DefaultPath,
+			WorktreeLocation: g.WorktreeLocation,
 		}
 	}
 

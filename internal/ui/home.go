@@ -4778,6 +4778,9 @@ func (h *Home) handleNewDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			// Generate worktree path using configured location/template
 			wtSettings := session.GetWorktreeSettings()
+			if groupOverride := h.groupTree.WorktreeLocationForGroup(groupPath); groupOverride != "" {
+				wtSettings.DefaultLocation = groupOverride
+			}
 			worktreePath = git.WorktreePath(git.WorktreePathOptions{
 				Branch:    branchName,
 				Location:  wtSettings.DefaultLocation,
@@ -6786,6 +6789,9 @@ func (h *Home) handleForkDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 
 					wtSettings := session.GetWorktreeSettings()
+					if groupOverride := h.groupTree.WorktreeLocationForGroup(groupPath); groupOverride != "" {
+						wtSettings.DefaultLocation = groupOverride
+					}
 					worktreePath := git.WorktreePath(git.WorktreePathOptions{
 						Branch:    branchName,
 						Location:  wtSettings.DefaultLocation,
