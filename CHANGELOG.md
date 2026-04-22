@@ -5,6 +5,18 @@ All notable changes to Agent Deck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-04-22
+
+### Added
+- **GitHub Copilot CLI as a first-class built-in tool** ([#694](https://github.com/asheshgoplani/agent-deck/pull/694), reporter: @Clean-Cole). Adds `copilot` to the same tool-routing path used by Claude/Gemini/Codex: `tooloptions.CopilotOptions` (with `SessionMode`, `ResumeSessionID`, `YoloMode`, `AutopilotMode`, `Model` fields), `Instance.buildCopilotCommand` honouring `[copilot]` settings (`command`, `yolo_mode`, `autopilot_mode`, `effort`, `default_model`, `config_dir`, `env_file`), `detectCopilotSessionAsync` scanning `<copilot_home>/session-state/` to capture the UUID after spawn, and `CreateForkedCopilotInstance` / `ForkCopilotWithOptions` for session forking by copying the source session-state dir to a new UUID. UI integration via the existing extension points: copilot preset in the new-session dialog, MCP Manager dialog with a single-scope branch that writes `<copilot_home>/mcp-config.json`, and a pink tool-badge color in the home view.
+- **Copilot ACP conductor integration** (`conductor/acp.py` + `conductor/bridge.py`). New 512-line `ACPConnection` class implements asyncio NDJSON JSON-RPC 2.0 client over the Agent Client Protocol (https://agentclientprotocol.com), generic enough to drive any `--acp --stdio` agent, not just Copilot. `bridge.py` adds an early `_drain_one_acp` fast-path so ACP-tagged conductor messages route through the persistent ACP connection while CLI-tagged messages continue down the original `copilot -p` subprocess path unchanged. Tests in `conductor/tests/test_bridge.py` (39 tests) and `conductor/tests/test_acp.py`.
+- **Per-group / per-profile Copilot config dir overrides** mirroring the Claude `[groups."<g>".claude].config_dir` / `[profiles.<p>.claude].config_dir` pattern. New `[groups."<g>".copilot].config_dir` and `[profiles.<p>.copilot].config_dir` TOML keys; resolution chain in `getCopilotConfigDirForGroup` is `COPILOT_HOME` env → group → profile → global `[copilot].config_dir` → `~/.copilot` default. New `GetCopilotConfigDirSourceForGroup(groupPath) (path, source)` returns the resolved source label (`"env"`/`"group"`/`"profile"`/`"global"`/`"default"`) for logging and dialogs, mirroring `GetClaudeConfigDirSourceForGroup`.
+
+### Fixed
+- **Shift+Enter multiline + Kitty keyboard protocol in tmux PTY input** — `internal/tmux/pty.go` now translates Shift+Enter to a literal newline before forwarding to tmux, so editor-style multiline input works in agent shells that opt into the Kitty keyboard protocol. Pure passthrough on terminals that don't send the Kitty modifier sequence.
+- **Spawned Copilot sessions now read from the configured `[copilot].config_dir`** — the spawn env-prefix previously exported `COPILOT_CONFIG_DIR=`, which the Copilot CLI does not recognize. Renamed to the official `COPILOT_HOME` env var (`copilot help environment`), so Copilot reads MCPs and session-state from the directory agent-deck writes to. The prefix is suppressed when the resolved source is `"default"` (no point exporting `COPILOT_HOME=~/.copilot`).
+- **`manage_mcp_json = false` now also short-circuits the Copilot MCP write path** (`WriteCopilotMCP`), matching the long-standing behaviour of `WriteMCPJsonFromConfig` for Claude project-scoped `.mcp.json` (#197 contributed by @sjoeboo). Documentation updated to make the universal scope explicit.
+
 ## [1.7.67] - 2026-04-22
 
 ### Added
