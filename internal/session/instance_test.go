@@ -2683,6 +2683,139 @@ func TestBuildClaudeExtraFlags_NilOpts(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeCommand_AppliesGroupClaudeOverrides(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	ClearUserConfigCache()
+	defer func() {
+		os.Setenv("HOME", origHome)
+		ClearUserConfigCache()
+	}()
+
+	agentDeckDir := filepath.Join(tmpHome, ".agent-deck")
+	if err := os.MkdirAll(agentDeckDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	configPath := filepath.Join(agentDeckDir, "config.toml")
+	configContent := `
+[claude]
+dev_channels = ["server:global"]
+
+[groups."team-a".claude]
+chrome = true
+dev_channels = ["server:webhook", "plugin:foo@bar"]
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	inst := NewInstanceWithTool("test", "/tmp/test", "claude")
+	inst.GroupPath = "team-a"
+
+	cmd := inst.buildClaudeCommand("claude")
+	if !strings.Contains(cmd, "--chrome") {
+		t.Fatalf("command missing --chrome: %s", cmd)
+	}
+	if !strings.Contains(cmd, "--dangerously-load-development-channels server:webhook plugin:foo@bar") {
+		t.Fatalf("command missing group dev_channels override: %s", cmd)
+	}
+	if strings.Contains(cmd, "server:global") {
+		t.Fatalf("command should not include global dev_channels when group override is set: %s", cmd)
+	}
+}
+
+func TestBuildClaudeResumeCommand_AppliesGroupClaudeOverrides(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	ClearUserConfigCache()
+	defer func() {
+		os.Setenv("HOME", origHome)
+		ClearUserConfigCache()
+	}()
+
+	agentDeckDir := filepath.Join(tmpHome, ".agent-deck")
+	if err := os.MkdirAll(agentDeckDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	configPath := filepath.Join(agentDeckDir, "config.toml")
+	configContent := `
+[claude]
+dev_channels = ["server:global"]
+
+[groups."team-a".claude]
+chrome = true
+dev_channels = ["server:webhook"]
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	inst := NewInstanceWithTool("test", "/tmp/test", "claude")
+	inst.GroupPath = "team-a"
+	inst.ClaudeSessionID = "resume-session-id"
+
+	cmd := inst.buildClaudeResumeCommand()
+	if !strings.Contains(cmd, "--chrome") {
+		t.Fatalf("resume command missing --chrome: %s", cmd)
+	}
+	if !strings.Contains(cmd, "--dangerously-load-development-channels server:webhook") {
+		t.Fatalf("resume command missing group dev_channels override: %s", cmd)
+	}
+	if strings.Contains(cmd, "server:global") {
+		t.Fatalf("resume command should not include global dev_channels when group override is set: %s", cmd)
+	}
+}
+
+func TestBuildClaudeForkCommandForTarget_AppliesTargetGroupOverrides(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	ClearUserConfigCache()
+	defer func() {
+		os.Setenv("HOME", origHome)
+		ClearUserConfigCache()
+	}()
+
+	agentDeckDir := filepath.Join(tmpHome, ".agent-deck")
+	if err := os.MkdirAll(agentDeckDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	configPath := filepath.Join(agentDeckDir, "config.toml")
+	configContent := `
+[claude]
+dev_channels = ["server:global"]
+
+[groups."team-a".claude]
+chrome = true
+dev_channels = ["plugin:foo@bar"]
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	parent := NewInstanceWithTool("parent", "/tmp/test", "claude")
+	parent.ClaudeSessionID = "parent-session-id"
+	parent.ClaudeDetectedAt = time.Now()
+	target := NewInstanceWithTool("child", "/tmp/test", "claude")
+	target.GroupPath = "team-a"
+
+	cmd, err := parent.buildClaudeForkCommandForTarget(target, nil)
+	if err != nil {
+		t.Fatalf("buildClaudeForkCommandForTarget: %v", err)
+	}
+	if !strings.Contains(cmd, "--chrome") {
+		t.Fatalf("fork command missing --chrome: %s", cmd)
+	}
+	if !strings.Contains(cmd, "--dangerously-load-development-channels plugin:foo@bar") {
+		t.Fatalf("fork command missing target group dev_channels override: %s", cmd)
+	}
+	if strings.Contains(cmd, "server:global") {
+		t.Fatalf("fork command should not include global dev_channels when target group override is set: %s", cmd)
+	}
+}
+
 // TestBuildClaudeCommand_ExportsInstanceID verifies that AGENTDECK_INSTANCE_ID
 // is included in the command string for Claude sessions.
 func TestBuildClaudeCommand_ExportsInstanceID(t *testing.T) {

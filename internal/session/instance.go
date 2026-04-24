@@ -620,13 +620,7 @@ func (i *Instance) buildClaudeCommandWithMessage(baseCommand, message string) st
 	instanceIDPrefix := fmt.Sprintf("AGENTDECK_INSTANCE_ID=%s ", i.ID)
 	configDirPrefix = instanceIDPrefix + configDirPrefix
 
-	// Get options - either from instance or create defaults from config
-	opts := i.GetClaudeOptions()
-	if opts == nil {
-		// Fall back to config defaults
-		userConfig, _ := LoadUserConfig()
-		opts = NewClaudeOptions(userConfig)
-	}
+	opts := i.effectiveClaudeOptions(i.GetClaudeOptions())
 
 	// S8 (v1.7.40) defense-in-depth: non-channel-owning claude spawns
 	// wrap the final exec in `env -u TELEGRAM_STATE_DIR` so the child
@@ -771,6 +765,47 @@ func (i *Instance) logClaudeConfigResolution() {
 	)
 }
 
+func cloneClaudeOptions(opts *ClaudeOptions) *ClaudeOptions {
+	if opts == nil {
+		return nil
+	}
+	cloned := *opts
+	if opts.DevChannels != nil {
+		cloned.DevChannels = append([]string(nil), opts.DevChannels...)
+	}
+	return &cloned
+}
+
+// effectiveClaudeOptions merges persisted Claude options with config defaults
+// and group overrides for the instance being launched.
+func (i *Instance) effectiveClaudeOptions(opts *ClaudeOptions) *ClaudeOptions {
+	userConfig, _ := LoadUserConfig()
+	if opts == nil {
+		opts = NewClaudeOptions(userConfig)
+	} else {
+		opts = cloneClaudeOptions(opts)
+		if userConfig != nil {
+			configOpts := NewClaudeOptions(userConfig)
+			if !opts.UseChrome {
+				opts.UseChrome = configOpts.UseChrome
+			}
+			if len(opts.DevChannels) == 0 {
+				opts.DevChannels = append([]string(nil), configOpts.DevChannels...)
+			}
+		}
+	}
+	if userConfig == nil {
+		return opts
+	}
+	if groupDevChannels, ok := userConfig.GetGroupClaudeDevChannels(i.GroupPath); ok {
+		opts.DevChannels = groupDevChannels
+	}
+	if !opts.UseChrome {
+		opts.UseChrome = userConfig.GetGroupClaudeChrome(i.GroupPath)
+	}
+	return opts
+}
+
 // buildClaudeExtraFlags builds extra command-line flags string from ClaudeOptions
 // Also handles instance-level flags like --add-dir for subagent access
 func (i *Instance) buildClaudeExtraFlags(opts *ClaudeOptions) string {
@@ -807,6 +842,10 @@ func (i *Instance) buildClaudeExtraFlags(opts *ClaudeOptions) string {
 			flags = append(flags, "--permission-mode auto")
 		} else if opts.AllowSkipPermissions {
 			flags = append(flags, "--allow-dangerously-skip-permissions")
+		}
+		if len(opts.DevChannels) > 0 {
+			flags = append(flags, "--dangerously-load-development-channels")
+			flags = append(flags, opts.DevChannels...)
 		}
 		if opts.UseChrome {
 			flags = append(flags, "--chrome")
@@ -4742,12 +4781,7 @@ func (i *Instance) buildClaudeResumeCommand() string {
 	instanceIDPrefix := fmt.Sprintf("AGENTDECK_INSTANCE_ID=%s ", i.ID)
 	configDirPrefix = instanceIDPrefix + configDirPrefix
 
-	// Get per-session permission settings (falls back to config if not persisted)
-	opts := i.GetClaudeOptions()
-	if opts == nil {
-		userConfig, _ := LoadUserConfig()
-		opts = NewClaudeOptions(userConfig)
-	}
+	opts := i.effectiveClaudeOptions(i.GetClaudeOptions())
 
 	// Check if session has actual conversation data.
 	// If not, use --session-id instead of --resume to avoid "No conversation found" error.
@@ -4803,7 +4837,6 @@ func (i *Instance) buildClaudeResumeCommand() string {
 	// buildClaudeExtraFlags silently disappears on session restart — the
 	// phase-5 loopback regression (TestResumeCommandAppendsChannels).
 	extraFlags := i.buildClaudeExtraFlags(opts)
-
 	// CLAUDE_SESSION_ID is propagated via host-side SetEnvironment (SyncSessionIDsToTmux)
 	// after the tmux session is restarted. No inline tmux set-environment in the shell string
 	// (which silently fails inside Docker sandbox containers).
@@ -4968,11 +5001,7 @@ func (i *Instance) buildClaudeForkCommandForTarget(target *Instance, opts *Claud
 	// and shell aliases are not available in non-interactive bash shells.
 	bashExportPrefix := target.buildBashExportPrefix()
 
-	// If no options provided, use defaults from config
-	if opts == nil {
-		userConfig, _ := LoadUserConfig()
-		opts = NewClaudeOptions(userConfig)
-	}
+	opts = target.effectiveClaudeOptions(opts)
 
 	// Build extra flags from options (for fork, we use ToArgsForFork which excludes session mode)
 	extraFlags := i.buildClaudeExtraFlags(opts)

@@ -1548,6 +1548,100 @@ config_dir = "~/.claude-team-b"
 	}
 }
 
+func TestUserConfig_GroupClaudeChrome(t *testing.T) {
+	tmpDir := t.TempDir()
+	configContent := `
+[claude]
+
+[groups."team-a".claude]
+chrome = true
+
+[groups."team-b".claude]
+config_dir = "~/.claude-team-b"
+`
+	configPath := filepath.Join(tmpDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	var config UserConfig
+	if _, err := toml.DecodeFile(configPath, &config); err != nil {
+		t.Fatalf("Failed to decode: %v", err)
+	}
+
+	if !config.GetGroupClaudeChrome("team-a") {
+		t.Error("GetGroupClaudeChrome(team-a) = false, want true")
+	}
+	if config.GetGroupClaudeChrome("team-b") {
+		t.Error("GetGroupClaudeChrome(team-b) = true, want false (no chrome key)")
+	}
+	if config.GetGroupClaudeChrome("unknown") {
+		t.Error("GetGroupClaudeChrome(unknown) = true, want false")
+	}
+	if config.GetGroupClaudeChrome("") {
+		t.Error("GetGroupClaudeChrome(\"\") = true, want false")
+	}
+}
+
+func TestUserConfig_GroupClaudeDevChannels(t *testing.T) {
+	tmpDir := t.TempDir()
+	configContent := `
+[claude]
+dev_channels = ["server:global"]
+
+[groups."team-a".claude]
+dev_channels = ["server:webhook", "plugin:foo@bar"]
+
+[groups."team-b".claude]
+config_dir = "~/.claude-team-b"
+
+[groups."team-c".claude]
+dev_channels = []
+`
+	configPath := filepath.Join(tmpDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	var config UserConfig
+	if _, err := toml.DecodeFile(configPath, &config); err != nil {
+		t.Fatalf("Failed to decode: %v", err)
+	}
+
+	got, ok := config.GetGroupClaudeDevChannels("team-a")
+	if !ok {
+		t.Fatal("GetGroupClaudeDevChannels(team-a) ok = false, want true")
+	}
+	want := []string{"server:webhook", "plugin:foo@bar"}
+	if len(got) != len(want) {
+		t.Fatalf("GetGroupClaudeDevChannels(team-a) len = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("GetGroupClaudeDevChannels(team-a)[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	if got, ok := config.GetGroupClaudeDevChannels("team-b"); ok || got != nil {
+		t.Errorf("GetGroupClaudeDevChannels(team-b) = %v, %v; want nil, false", got, ok)
+	}
+
+	got, ok = config.GetGroupClaudeDevChannels("team-c")
+	if !ok {
+		t.Fatal("GetGroupClaudeDevChannels(team-c) ok = false, want true")
+	}
+	if len(got) != 0 {
+		t.Errorf("GetGroupClaudeDevChannels(team-c) len = %d, want 0", len(got))
+	}
+
+	if got, ok := config.GetGroupClaudeDevChannels("unknown"); ok || got != nil {
+		t.Errorf("GetGroupClaudeDevChannels(unknown) = %v, %v; want nil, false", got, ok)
+	}
+	if got, ok := config.GetGroupClaudeDevChannels(""); ok || got != nil {
+		t.Errorf("GetGroupClaudeDevChannels(\"\") = %v, %v; want nil, false", got, ok)
+	}
+}
+
 func TestWatcherSettingsDefaults(t *testing.T) {
 	// Zero-value WatcherSettings (as if no [watcher] section in config.toml)
 	var ws WatcherSettings

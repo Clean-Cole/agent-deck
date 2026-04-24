@@ -243,6 +243,15 @@ type GroupClaudeSettings struct {
 
 	// EnvFile overrides [claude].env_file for sessions in this group.
 	EnvFile string `toml:"env_file"`
+
+	// Chrome enables --chrome for sessions in this group when true.
+	// Mirrors [claude].chrome semantics — additive over the global default;
+	// leave unset to inherit. Cannot disable a globally-enabled chrome.
+	Chrome bool `toml:"chrome"`
+
+	// DevChannels overrides [claude].dev_channels for sessions in this group.
+	// Nil means "inherit global"; an explicit empty array clears the global list.
+	DevChannels []string `toml:"dev_channels"`
 }
 
 // ConductorOverrides defines per-conductor configuration overrides.
@@ -657,6 +666,17 @@ type ClaudeSettings struct {
 	// Path can be absolute, ~ for home, $HOME/${VAR} for env vars, or relative to session working directory
 	EnvFile string `toml:"env_file"`
 
+	// Chrome enables --chrome flag for Claude sessions
+	// Launches Claude with browser automation capabilities.
+	// Default: false
+	Chrome bool `toml:"chrome"`
+
+	// DevChannels specifies tagged entries for --dangerously-load-development-channels.
+	// Each entry must be tagged: "server:<name>" or "plugin:<name>@<marketplace>".
+	// Example: ["server:webhook", "plugin:myplugin@mymarketplace"]
+	// Default: [] (empty)
+	DevChannels []string `toml:"dev_channels"`
+
 	// HooksEnabled enables Claude Code hooks for real-time status detection.
 	// When enabled, agent-deck uses lifecycle hooks (SessionStart, Stop, etc.)
 	// for instant, deterministic status updates instead of polling tmux content.
@@ -698,6 +718,37 @@ func (c *UserConfig) GetGroupClaudeEnvFile(groupPath string) string {
 		return ""
 	}
 	return groupCfg.Claude.EnvFile
+}
+
+// GetGroupClaudeChrome reports whether the named group has chrome enabled.
+// Returns false when no group, no [groups.<g>.claude] block, or chrome is
+// not set. Group chrome is additive — a true value forces --chrome on for
+// sessions in that group regardless of [claude].chrome; a false (unset)
+// value inherits the global default.
+func (c *UserConfig) GetGroupClaudeChrome(groupPath string) bool {
+	if c == nil || groupPath == "" || c.Groups == nil {
+		return false
+	}
+	groupCfg, ok := c.Groups[groupPath]
+	if !ok {
+		return false
+	}
+	return groupCfg.Claude.Chrome
+}
+
+// GetGroupClaudeDevChannels returns the group-specific Claude development
+// channels, if configured. The bool result reports whether the group set
+// dev_channels at all. A configured empty slice intentionally clears any
+// inherited global [claude].dev_channels value.
+func (c *UserConfig) GetGroupClaudeDevChannels(groupPath string) ([]string, bool) {
+	if c == nil || groupPath == "" || c.Groups == nil {
+		return nil, false
+	}
+	groupCfg, ok := c.Groups[groupPath]
+	if !ok || groupCfg.Claude.DevChannels == nil {
+		return nil, false
+	}
+	return append([]string(nil), groupCfg.Claude.DevChannels...), true
 }
 
 // GetConductorClaudeConfigDir returns the conductor-specific Claude config
