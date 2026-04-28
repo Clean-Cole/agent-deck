@@ -33,6 +33,14 @@ const attachReplyQuarantine = 500 * time.Millisecond
 // shiftEnterCSIu is the kitty keyboard protocol encoding for Shift+Enter.
 var shiftEnterCSIu = []byte("\x1b[13;2u")
 
+// escCSIu is the kitty keyboard protocol encoding for ESC (codepoint 27).
+// In kitty disambiguate mode, ESC is sent as \x1b[27u instead of plain \x1b
+// so the terminal can distinguish "user pressed ESC" from "start of escape
+// sequence". tmux does not forward this as-is; it re-encodes it in a way that
+// Claude Code (and other apps) don't recognise, causing "27u" to appear as
+// literal typed text.
+var escCSIu = []byte("\x1b[27u")
+
 // TranslateShiftEnter replaces Shift+Enter CSI u sequences (\x1b[13;2u) with
 // a literal newline (\n) in the given data. This is needed because tmux
 // re-encodes CSI u input as xterm modifyOtherKeys format on output, which many
@@ -44,6 +52,17 @@ func TranslateShiftEnter(data []byte) []byte {
 		return data
 	}
 	return bytes.ReplaceAll(data, shiftEnterCSIu, []byte{'\n'})
+}
+
+// TranslateEsc replaces the kitty keyboard protocol encoding of ESC
+// (\x1b[27u) with a plain ESC byte (\x1b). Without this translation tmux
+// re-encodes the sequence in a format that inner apps like Claude Code do not
+// handle, causing literal "27u" to appear in the editor.
+func TranslateEsc(data []byte) []byte {
+	if !bytes.Contains(data, escCSIu) {
+		return data
+	}
+	return bytes.ReplaceAll(data, escCSIu, []byte{'\x1b'})
 }
 
 // IndexDetachKey returns the index of a control-key sequence in data, or -1 if
@@ -285,7 +304,9 @@ func (s *Session) Attach(ctx context.Context, detachByte ...byte) error {
 			// Translate Shift+Enter CSI u (\x1b[13;2u) to literal \n before
 			// forwarding to tmux. tmux re-encodes extended keys as xterm
 			// modifyOtherKeys format which many apps don't understand.
+			// Translate ESC CSI u (\x1b[27u) to plain \x1b for the same reason.
 			data := TranslateShiftEnter(chunk)
+			data = TranslateEsc(data)
 
 			// Check for the detach key anywhere in the input chunk.
 			// Some terminals coalesce reads, so detach must not require a single-byte read.
